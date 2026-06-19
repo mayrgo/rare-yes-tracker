@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f8f5ef" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Rare Yes" />
+  <title>Rare Yes Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="todayLabel">Today</p>
+        <h1>Rare Yes</h1>
+      </div>
+      <button id="refreshBtn" class="icon-button" aria-label="Refresh">↻</button>
+    </header>
+
+    <main>
+      <section id="view-today" class="view active" aria-labelledby="tab-today">
+        <div class="hero-card">
+          <h2>Log a yes event</h2>
+          <p>Tap when something happened. Empty days are simply quiet days.</p>
+          <div id="habitButtons" class="habit-grid"></div>
+        </div>
+        <section class="panel">
+          <div class="section-head">
+            <h2>Logged today</h2>
+            <span id="todayCount" class="pill">0</span>
+          </div>
+          <div id="todayEvents" class="event-list empty-state"></div>
+        </section>
+      </section>
+
+      <section id="view-calendar" class="view" aria-labelledby="tab-calendar">
+        <section class="panel sticky-panel">
+          <div class="calendar-header">
+            <button id="prevMonth" class="ghost-button">‹</button>
+            <h2 id="calendarTitle"></h2>
+            <button id="nextMonth" class="ghost-button">›</button>
+          </div>
+          <div class="weekday-row" aria-hidden="true">
+            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+          </div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+        </section>
+        <section class="panel">
+          <div class="section-head">
+            <h2 id="selectedDayTitle">Pick a day</h2>
+          </div>
+          <div id="dayEvents" class="event-list empty-state"></div>
+        </section>
+      </section>
+
+      <section id="view-stats" class="view" aria-labelledby="tab-stats">
+        <section class="panel">
+          <h2>Stats</h2>
+          <div class="period-controls">
+            <select id="periodSelect" aria-label="Stats period">
+              <option value="7">7 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="currentMonth">Current month</option>
+              <option value="previousMonth">Previous month</option>
+              <option value="custom">Custom range</option>
+            </select>
+            <div id="customRange" class="custom-range hidden">
+              <label>From <input id="customStart" type="date" /></label>
+              <label>To <input id="customEnd" type="date" /></label>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>By habit</h2></div>
+          <div id="statsCards" class="stats-list"></div>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>Events in period</h2></div>
+          <div id="barChart" class="bar-chart"></div>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>Monthly summary</h2></div>
+          <div id="heatmap" class="heatmap"></div>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>Compared with previous period</h2></div>
+          <div id="comparisonChart" class="comparison-chart"></div>
+        </section>
+      </section>
+
+      <section id="view-habits" class="view" aria-labelledby="tab-habits">
+        <section class="panel">
+          <h2>Add habit/event</h2>
+          <form id="habitForm" class="habit-form">
+            <input id="habitName" type="text" placeholder="Emoji + name, e.g. ☕ Coffee" required maxlength="60" />
+            <div class="palette" id="colorPalette" aria-label="Color palette"></div>
+            <button class="primary-button" type="submit">Add</button>
+          </form>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>Active</h2></div>
+          <div id="activeHabits" class="habit-list"></div>
+        </section>
+        <section class="panel">
+          <div class="section-head"><h2>Archived</h2></div>
+          <div id="archivedHabits" class="habit-list empty-state"></div>
+        </section>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Main navigation">
+      <button id="tab-today" class="tab active" data-view="today">Today</button>
+      <button id="tab-calendar" class="tab" data-view="calendar">Calendar</button>
+      <button id="tab-stats" class="tab" data-view="stats">Stats</button>
+      <button id="tab-habits" class="tab" data-view="habits">Habits</button>
+    </nav>
+  </div>
+
+  <dialog id="eventDialog" class="dialog">
+    <form method="dialog" id="eventForm">
+      <h2>Edit event</h2>
+      <input type="hidden" id="eventId" />
+      <label>Date <input type="date" id="eventDate" required /></label>
+      <label>Comment <textarea id="eventComment" rows="4" placeholder="Optional note"></textarea></label>
+      <div class="dialog-actions">
+        <button id="deleteEventBtn" type="button" class="danger-button">Delete</button>
+        <button value="cancel" class="ghost-button">Cancel</button>
+        <button id="saveEventBtn" value="default" class="primary-button">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="habitDialog" class="dialog">
+    <form method="dialog" id="editHabitForm">
+      <h2>Edit habit/event</h2>
+      <input type="hidden" id="editHabitId" />
+      <label>Name <input id="editHabitName" type="text" required maxlength="60" /></label>
+      <div class="palette" id="editColorPalette"></div>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost-button">Cancel</button>
+        <button value="default" class="primary-button">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
