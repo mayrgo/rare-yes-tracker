@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rare-yes-v1';
+const CACHE_NAME = 'rare-yes-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,6 +22,16 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  if (url.origin !== self.location.origin || event.request.method !== 'GET') return;
+
+  // Network-first keeps GitHub Pages updates from getting stuck behind the PWA cache.
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
 });

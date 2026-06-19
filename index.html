@@ -51,8 +51,9 @@
           <div id="calendarGrid" class="calendar-grid"></div>
         </section>
         <section class="panel">
-          <div class="section-head">
+          <div class="section-head selected-day-head">
             <h2 id="selectedDayTitle">Pick a day</h2>
+            <button id="addSelectedDayEventBtn" class="primary-button small-button" type="button">Add</button>
           </div>
           <div id="dayEvents" class="event-list empty-state"></div>
         </section>
@@ -120,6 +121,19 @@
       <button id="tab-habits" class="tab" data-view="habits">Habits</button>
     </nav>
   </div>
+
+  <dialog id="addEventDialog" class="dialog">
+    <form method="dialog" id="addEventForm">
+      <h2>Add event</h2>
+      <label>Habit/event <select id="addEventHabit" required></select></label>
+      <label>Date <input type="date" id="addEventDate" required /></label>
+      <label>Comment <textarea id="addEventComment" rows="4" placeholder="Optional note"></textarea></label>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost-button">Cancel</button>
+        <button id="saveAddedEventBtn" value="default" class="primary-button">Add</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="eventDialog" class="dialog">
     <form method="dialog" id="eventForm">

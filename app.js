@@ -32,6 +32,39 @@ const state = {
   loading: false
 };
 
+const SYNC_DELAY_MS = 450;
+let syncTimer = null;
+
+function tempId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function scheduleBackgroundRefresh(delay = SYNC_DELAY_MS) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    loadAll({ silent: true }).catch((err) => console.error(err));
+  }, delay);
+}
+
+function replaceById(list, id, replacement) {
+  const index = list.findIndex((item) => item.id === id);
+  if (index !== -1) list.splice(index, 1, replacement);
+}
+
+function removeById(list, id) {
+  const index = list.findIndex((item) => item.id === id);
+  if (index !== -1) return list.splice(index, 1)[0];
+  return null;
+}
+
+function mergeClean(item) {
+  const copy = { ...item };
+  delete copy._pending;
+  delete copy._pendingText;
+  delete copy._error;
+  return copy;
+}
+
 const $ = (id) => document.getElementById(id);
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -77,7 +110,8 @@ async function api(action, payload = {}, method = 'POST') {
   return data;
 }
 
-async function loadAll() {
+async function loadAll(options = {}) {
+  const silent = Boolean(options.silent);
   if (state.loading) return;
   state.loading = true;
   try {
@@ -93,7 +127,7 @@ async function loadAll() {
       }));
       state.events = [];
       render();
-      toast('Demo mode: add API_URL in config.js');
+      if (!silent) toast('Demo mode: add API_URL in config.js');
       return;
     }
     const [habitsRes, eventsRes] = await Promise.all([
@@ -105,7 +139,7 @@ async function loadAll() {
     render();
   } catch (err) {
     console.error(err);
-    toast(err.message);
+    if (!silent) toast(err.message);
   } finally {
     state.loading = false;
   }
@@ -155,25 +189,48 @@ function createPalette(el, stateKey) {
 function setupForms() {
   $('habitForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await createHabit($('habitName').value.trim(), state.selectedColor);
+    const name = $('habitName').value.trim();
+    const colorName = state.selectedColor;
     $('habitForm').reset();
+    state.selectedColor = colorName;
+    createPalette($('colorPalette'), 'selectedColor');
+    await createHabit(name, colorName);
   });
 
   $('eventForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await updateEvent($('eventId').value, $('eventDate').value, $('eventComment').value.trim());
+    const id = $('eventId').value;
+    const date = $('eventDate').value;
+    const comment = $('eventComment').value.trim();
     $('eventDialog').close();
+    await updateEvent(id, date, comment);
   });
 
   $('deleteEventBtn').addEventListener('click', async () => {
-    await deleteEvent($('eventId').value);
+    const id = $('eventId').value;
     $('eventDialog').close();
+    await deleteEvent(id);
+  });
+
+  $('addSelectedDayEventBtn').addEventListener('click', () => openAddEventDialog(state.selectedDate));
+
+  $('addEventForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const habitId = $('addEventHabit').value;
+    const date = $('addEventDate').value;
+    const comment = $('addEventComment').value.trim();
+    $('addEventDialog').close();
+    $('addEventForm').reset();
+    await createEvent(habitId, date, comment);
   });
 
   $('editHabitForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await updateHabit($('editHabitId').value, $('editHabitName').value.trim(), state.editColor);
+    const id = $('editHabitId').value;
+    const name = $('editHabitName').value.trim();
+    const colorName = state.editColor;
     $('habitDialog').close();
+    await updateHabit(id, name, colorName);
   });
 }
 
@@ -208,7 +265,9 @@ function renderToday() {
     button.className = 'log-button';
     button.style.background = habit.color_value || colorValue(habit.color_name);
     const count = countByHabit[habit.id] || 0;
-    button.innerHTML = `${escapeHTML(habit.name)}<small>${count ? '+ Add another yes event' : 'Tap to log today'}</small>`;
+    const label = habit._pending ? 'Saving habit…' : count ? '+ Add another yes event' : 'Tap to log today';
+    button.innerHTML = `${escapeHTML(habit.name)}<small>${label}</small>`;
+    if (habit._pending) button.disabled = true;
     button.addEventListener('click', () => createEvent(habit.id, todayISO(), ''));
     $('habitButtons').appendChild(button);
   });
@@ -269,14 +328,15 @@ function renderEventList(container, events) {
   events.forEach((event) => {
     const habit = habitById(event.habit_id) || { name: 'Archived habit', color_name: 'gray', color_value: colorValue('gray') };
     const card = document.createElement('div');
-    card.className = 'event-card';
+    card.className = `event-card${event._pending ? ' pending-card' : ''}${event._error ? ' error-card' : ''}`;
+    const status = event._pending ? ` · ${escapeHTML(event._pendingText || 'Saving…')}` : event._error ? ' · Not saved' : '';
     card.innerHTML = `
       <span class="event-dot" style="background:${habit.color_value || colorValue(habit.color_name)}"></span>
       <div>
         <div class="event-title">${escapeHTML(habit.name)}</div>
-        <div class="event-meta">${formatLongDate(event.date)}${event.comment ? ' · ' + escapeHTML(event.comment) : ''}</div>
+        <div class="event-meta">${formatLongDate(event.date)}${event.comment ? ' · ' + escapeHTML(event.comment) : ''}${status}</div>
       </div>
-      <button class="ghost-button" type="button">Edit</button>
+      <button class="ghost-button" type="button" ${event._pending ? 'disabled' : ''}>Edit</button>
     `;
     card.querySelector('button').addEventListener('click', () => openEventDialog(event));
     container.appendChild(card);
@@ -383,13 +443,14 @@ function renderHabitList(container, habits, archived) {
   container.innerHTML = '';
   habits.forEach((habit) => {
     const row = document.createElement('div');
-    row.className = 'habit-row';
+    row.className = `habit-row${habit._pending ? ' pending-card' : ''}${habit._error ? ' error-card' : ''}`;
+    const status = habit._pending ? ` · ${escapeHTML(habit._pendingText || 'Saving…')}` : habit._error ? ' · Not saved' : '';
     row.innerHTML = `
       <span class="event-dot" style="background:${habit.color_value || colorValue(habit.color_name)}"></span>
-      <div><div class="event-title">${escapeHTML(habit.name)}</div><div class="event-meta">${habit.color_name || 'color'}</div></div>
+      <div><div class="event-title">${escapeHTML(habit.name)}</div><div class="event-meta">${habit.color_name || 'color'}${status}</div></div>
       <div class="habit-actions">
-        <button class="ghost-button edit">Edit</button>
-        <button class="${archived ? 'primary-button restore' : 'danger-button archive'}">${archived ? 'Restore' : 'Archive'}</button>
+        <button class="ghost-button edit" ${habit._pending ? 'disabled' : ''}>Edit</button>
+        <button class="${archived ? 'primary-button restore' : 'danger-button archive'}" ${habit._pending ? 'disabled' : ''}>${archived ? 'Restore' : 'Archive'}</button>
       </div>`;
     row.querySelector('.edit').addEventListener('click', () => openHabitDialog(habit));
     const actionBtn = row.querySelector(archived ? '.restore' : '.archive');
@@ -399,61 +460,214 @@ function renderHabitList(container, habits, archived) {
 }
 
 async function createEvent(habitId, date, comment) {
+  if (!apiReady()) {
+    toast('Connect config.js before logging real events.');
+    return;
+  }
+  const optimisticEvent = {
+    id: tempId('event'),
+    date,
+    habit_id: habitId,
+    comment: comment || '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: '',
+    _pending: true,
+    _pendingText: 'Saving…'
+  };
+  state.events.push(optimisticEvent);
+  render();
+
   try {
-    if (!apiReady()) throw new Error('Connect config.js before logging real events.');
-    await api('POST_EVENT', { habit_id: habitId, date, comment });
-    await loadAll();
+    const data = await api('POST_EVENT', { habit_id: habitId, date, comment });
+    replaceById(state.events, optimisticEvent.id, data.event || mergeClean(optimisticEvent));
+    render();
+    scheduleBackgroundRefresh();
     toast('Logged');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    removeById(state.events, optimisticEvent.id);
+    render();
+    toast(`Could not save: ${err.message}`);
+  }
 }
 
 async function updateEvent(id, date, comment) {
+  const index = state.events.findIndex((event) => event.id === id);
+  if (index === -1) return;
+  const previous = { ...state.events[index] };
+  state.events[index] = {
+    ...state.events[index],
+    date,
+    comment,
+    updated_at: new Date().toISOString(),
+    _pending: true,
+    _pendingText: 'Saving edit…'
+  };
+  render();
+
   try {
-    await api('PATCH_EVENT', { id, date, comment });
-    await loadAll();
+    const data = await api('PATCH_EVENT', { id, date, comment });
+    replaceById(state.events, id, data.event || mergeClean(state.events[index]));
+    render();
+    scheduleBackgroundRefresh();
     toast('Updated');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    replaceById(state.events, id, previous);
+    render();
+    toast(`Could not update: ${err.message}`);
+  }
 }
 
 async function deleteEvent(id) {
+  const removed = removeById(state.events, id);
+  if (!removed) return;
+  render();
+
   try {
     await api('DELETE_EVENT', { id });
-    await loadAll();
+    scheduleBackgroundRefresh();
     toast('Deleted softly');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    state.events.push(removed);
+    render();
+    toast(`Could not delete: ${err.message}`);
+  }
 }
 
 async function createHabit(name, colorName) {
+  if (!name) return;
+  if (!apiReady()) {
+    toast('Connect config.js before adding real habits.');
+    return;
+  }
+
+  const optimisticHabit = {
+    id: tempId('habit'),
+    name,
+    color_name: colorName,
+    color_value: colorValue(colorName),
+    is_active: true,
+    created_at: new Date().toISOString(),
+    archived_at: '',
+    _pending: true,
+    _pendingText: 'Saving…'
+  };
+  state.habits.push(optimisticHabit);
+  render();
+
   try {
-    if (!name) return;
-    await api('POST_HABIT', { name, color_name: colorName, color_value: colorValue(colorName) });
-    await loadAll();
+    const data = await api('POST_HABIT', { name, color_name: colorName, color_value: colorValue(colorName) });
+    replaceById(state.habits, optimisticHabit.id, data.habit || mergeClean(optimisticHabit));
+    render();
+    scheduleBackgroundRefresh();
     toast('Added');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    removeById(state.habits, optimisticHabit.id);
+    render();
+    toast(`Could not add: ${err.message}`);
+  }
 }
 
 async function updateHabit(id, name, colorName) {
+  if (!name) return;
+  const index = state.habits.findIndex((habit) => habit.id === id);
+  if (index === -1) return;
+  const previous = { ...state.habits[index] };
+  state.habits[index] = {
+    ...state.habits[index],
+    name,
+    color_name: colorName,
+    color_value: colorValue(colorName),
+    _pending: true,
+    _pendingText: 'Saving edit…'
+  };
+  render();
+
   try {
-    await api('PATCH_HABIT', { id, name, color_name: colorName, color_value: colorValue(colorName) });
-    await loadAll();
+    const data = await api('PATCH_HABIT', { id, name, color_name: colorName, color_value: colorValue(colorName) });
+    replaceById(state.habits, id, data.habit || mergeClean(state.habits[index]));
+    render();
+    scheduleBackgroundRefresh();
     toast('Saved');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    replaceById(state.habits, id, previous);
+    render();
+    toast(`Could not save: ${err.message}`);
+  }
 }
 
 async function archiveHabit(id) {
+  const index = state.habits.findIndex((habit) => habit.id === id);
+  if (index === -1) return;
+  const previous = { ...state.habits[index] };
+  state.habits[index] = {
+    ...state.habits[index],
+    is_active: false,
+    archived_at: previous.archived_at || new Date().toISOString(),
+    _pending: true,
+    _pendingText: 'Archiving…'
+  };
+  render();
+
   try {
-    await api('ARCHIVE_HABIT', { id });
-    await loadAll();
+    const data = await api('ARCHIVE_HABIT', { id });
+    replaceById(state.habits, id, data.habit || mergeClean(state.habits[index]));
+    render();
+    scheduleBackgroundRefresh();
     toast('Archived');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    replaceById(state.habits, id, previous);
+    render();
+    toast(`Could not archive: ${err.message}`);
+  }
 }
 
 async function restoreHabit(id) {
+  const index = state.habits.findIndex((habit) => habit.id === id);
+  if (index === -1) return;
+  const previous = { ...state.habits[index] };
+  state.habits[index] = {
+    ...state.habits[index],
+    is_active: true,
+    archived_at: '',
+    _pending: true,
+    _pendingText: 'Restoring…'
+  };
+  render();
+
   try {
-    await api('RESTORE_HABIT', { id });
-    await loadAll();
+    const data = await api('RESTORE_HABIT', { id });
+    replaceById(state.habits, id, data.habit || mergeClean(state.habits[index]));
+    render();
+    scheduleBackgroundRefresh();
     toast('Restored');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    replaceById(state.habits, id, previous);
+    render();
+    toast(`Could not restore: ${err.message}`);
+  }
+}
+
+function openAddEventDialog(date) {
+  const select = $('addEventHabit');
+  const activeHabits = state.habits.filter((h) => isActive(h) && !h._pending);
+  select.innerHTML = '';
+  activeHabits.forEach((habit) => {
+    const option = document.createElement('option');
+    option.value = habit.id;
+    option.textContent = habit.name;
+    select.appendChild(option);
+  });
+  $('addEventDate').value = date || todayISO();
+  $('addEventComment').value = '';
+  $('saveAddedEventBtn').disabled = activeHabits.length === 0;
+  if (activeHabits.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No active habits available';
+    select.appendChild(option);
+  }
+  $('addEventDialog').showModal();
 }
 
 function openEventDialog(event) {
@@ -533,7 +747,13 @@ function colorValue(name) { return COLOR_OPTIONS.find((c) => c.name === name)?.v
 function groupCount(items, key) { return items.reduce((acc, item) => { acc[item[key]] = (acc[item[key]] || 0) + 1; return acc; }, {}); }
 function sortByCreated(a, b) { return String(a.created_at).localeCompare(String(b.created_at)); }
 function todayISO() { return toISO(new Date()); }
-function toISO(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString().slice(0, 10); }
+function toISO(date) {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function parseISO(iso) { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); }
 function addDays(date, days) { const d = new Date(date); d.setDate(d.getDate() + days); return d; }
 function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return startOfMonth(d); }
