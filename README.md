@@ -161,3 +161,29 @@ The frontend sends JSON as `text/plain` to avoid browser CORS preflight issues w
 - Do not publish sensitive data in this setup.
 - Habit deletion is archive/deactivate only.
 - Event deletion is soft deletion using `deleted_at`.
+
+## Performance update
+
+This version uses optimistic UI updates for the slow Google Apps Script + Google Sheets path:
+
+- Logging an event appears immediately on screen.
+- Editing an event appears immediately.
+- Deleting an event disappears immediately, while the backend soft-deletes it.
+- Adding, editing, archiving, and restoring habits updates the UI immediately.
+- If the backend request fails, the UI rolls the change back and shows an error toast.
+
+The Apps Script write may still take several seconds, but the app no longer blocks the interface while it waits for Google Sheets.
+
+The service worker cache name was bumped to `rare-yes-v2` and changed to network-first for app files, so GitHub Pages updates are less likely to get stuck behind the PWA cache.
+
+## Fast v3 fixes
+
+- Fixed the calendar date offset bug on positive time zones by formatting dates locally instead of converting local midnight through UTC.
+- Added an **Add** button on the Calendar day detail panel, so you can pick a past date, choose an active habit/event, add an optional comment, and save it with the same instant optimistic UI.
+- Service worker cache was bumped to `rare-yes-v3`; after upload, refresh/reinstall the PWA if old files keep showing.
+
+## v4 notes
+
+- Fixed a JavaScript syntax issue in the calendar add-event form.
+- Event cards now show Delete directly next to Edit.
+- Service worker cache is `rare-yes-v4`.

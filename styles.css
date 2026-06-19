@@ -115,3 +115,10 @@ button:disabled { opacity: .62; cursor: wait; }
   0%, 100% { transform: scale(.75); opacity: .25; }
   50% { transform: scale(1.25); opacity: .55; }
 }
+.event-actions { display: flex; gap: 6px; align-items: center; }
+.event-actions button { padding: 8px 10px; font-size: 12px; }
+.small-button { padding: 8px 12px; font-size: 13px; }
+@media (max-width: 390px) {
+  .event-card { grid-template-columns: 12px 1fr; }
+  .event-actions { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
+}

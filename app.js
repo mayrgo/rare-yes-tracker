@@ -336,9 +336,13 @@ function renderEventList(container, events) {
         <div class="event-title">${escapeHTML(habit.name)}</div>
         <div class="event-meta">${formatLongDate(event.date)}${event.comment ? ' · ' + escapeHTML(event.comment) : ''}${status}</div>
       </div>
-      <button class="ghost-button" type="button" ${event._pending ? 'disabled' : ''}>Edit</button>
+      <div class="event-actions">
+        <button class="ghost-button edit-event" type="button" ${event._pending ? 'disabled' : ''}>Edit</button>
+        <button class="danger-button delete-event" type="button" ${event._pending ? 'disabled' : ''}>Delete</button>
+      </div>
     `;
-    card.querySelector('button').addEventListener('click', () => openEventDialog(event));
+    card.querySelector('.edit-event').addEventListener('click', () => openEventDialog(event));
+    card.querySelector('.delete-event').addEventListener('click', () => deleteEvent(event.id));
     container.appendChild(card);
   });
 }
